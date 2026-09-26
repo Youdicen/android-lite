@@ -1,22 +1,24 @@
 # android-lite
 
-Servidor **MCP** ligero para que un agente de IA (Hermes, Claude Code, Cursor…) controle un teléfono **Android solo con la estructura de la pantalla**. No usa capturas, ni visión, ni ningún LLM dentro.
+**English** | [Español](README.es.md)
 
-*Lightweight MCP server to drive Android from the UI tree only (no screenshots, no vision), built on top of [google/artemis](https://github.com/google/artemis).*
+A lightweight **MCP** server that lets an AI agent (Hermes, Claude Code, Cursor…) drive an **Android phone from the screen structure alone**. It uses no screenshots, no vision and no LLM inside.
 
-## Por qué
+It is built on top of [google/artemis](https://github.com/google/artemis).
 
-Los agentes que miran capturas de pantalla gastan muchos tokens. Medido en un Pixel 7 Pro enviando un correo en Gmail:
+## Why
 
-| Enfoque | Tokens por pantalla | Correo completo |
+Agents that look at screenshots burn a lot of tokens. These numbers were measured on a Pixel 7 Pro sending an email in Gmail:
+
+| Approach | Tokens per screen | Whole email |
 |---|---|---|
-| Agente ARTEMIS (Gemini, captura + árbol + historial) | 8.000–15.000 por paso | ~128.000 |
-| `artemis mcp --type adb` (árbol en JSON crudo) | ~5.400 | — |
+| ARTEMIS agent (Gemini: screenshot + UI tree + history) | 8,000–15,000 per step | ~128,000 |
+| `artemis mcp --type adb` (raw JSON UI tree) | ~5,400 | — |
 | **android-lite** | **~100–250** | **~800** |
 
-Con tan pocos tokens por pantalla, un modelo local modesto (por ejemplo Qwen 27B en Ollama) maneja el teléfono sin coste de nube.
+At this size, a modest local model (for example Qwen 27B on Ollama) can operate the phone with no cloud cost at all.
 
-## Cómo se ve la pantalla
+## What the model sees
 
 ```
 [com.android.settings] 11 elementos · desplazable
@@ -27,43 +29,55 @@ Con tan pocos tokens por pantalla, un modelo local modesto (por ejemplo Qwen 27B
 2e Buscar en Configuración: "batería"
 ```
 
-`t` = tocable, `e` = campo de texto (valor entre comillas), `[x]`/`[ ]` = casilla, `*` = seleccionado, sin marca = solo texto. El número se usa con las herramientas.
+Labels come from the phone's own language; this phone runs in Spanish.
 
-**Cómo se arma la lista:**
-- El texto de los elementos hijos se une al botón que los contiene, por ejemplo "Batería · 32 %".
-- Un interruptor sin nombre toma el nombre de su fila, y un campo sin nombre toma la etiqueta que tiene a su izquierda (el "Para" de Gmail).
-- Se quitan el teclado, la barra de estado, los elementos invisibles y los duplicados.
+- `t`: tappable
+- `e`: text field, with its current value in quotes
+- `[x]` / `[ ]`: checkbox or switch state
+- `*`: selected
+- no flag: plain text
 
-## Herramientas
+The number at the start of each line is what you pass to the tools.
 
-| Herramienta | Qué hace |
-|---|---|
-| `ver_pantalla(esperar=0)` | Devuelve la lista compacta de la pantalla actual. |
-| `tocar(n, largo=False)` | Toca el elemento `n`. |
-| `escribir(n, texto, borrar=True, enviar=False)` | Escribe en el campo `n` por portapapeles, así que admite acentos y emojis. |
-| `deslizar(direccion)` | Desplaza hacia `abajo`, `arriba`, `izquierda` o `derecha`. |
-| `atras()` | Pulsa el botón Atrás. |
-| `tecla(nombre)` | Pulsa `inicio`, `enter`, `borrar` o `recientes`. |
-| `abrir_app(nombre)` | Abre una app por su nombre ("Gmail", "Ajustes", "WhatsApp") o por su paquete, sin usar un LLM. |
+**How the list is built:**
+- Child texts are merged into the button that contains them, e.g. "Batería · 32 %".
+- A switch with no label of its own takes the label of its row.
+- A text field with no label takes the caption on its left, such as Gmail's "To" field.
+- The keyboard, the status bar, invisible nodes and duplicates are dropped.
 
-**Qué más hacen:**
-- Cada acción **devuelve la pantalla nueva**, así que basta una llamada por paso.
-- Antes de tocar o escribir, vuelve a leer la pantalla y localiza el elemento por su etiqueta. Si ya no está, no actúa.
-- Si el teléfono está bloqueado, `ver_pantalla` lo indica.
+## Tools
 
-## Requisitos
+Tool names and messages are in Spanish. Each tool is listed with its English meaning.
 
-- Un teléfono Android con depuración USB o inalámbrica activada y `adb` funcionando.
-- [google/artemis](https://github.com/google/artemis) clonado e instalado (`uv sync`). android-lite reutiliza su controlador de dispositivo y su servicio de accesibilidad, que lee el árbol en ~20 ms.
-  - El servicio se instala en el teléfono con `uv run artemis helper install`.
+| Tool | Meaning | What it does |
+|---|---|---|
+| `ver_pantalla(esperar=0)` | view screen | Returns the compact list for the current screen. |
+| `tocar(n, largo=False)` | tap | Taps element `n`. Set `largo=True` for a long press. |
+| `escribir(n, texto, borrar=True, enviar=False)` | type | Types into field `n` through the clipboard, so accents and emoji work. `borrar` replaces the existing content; `enviar` presses Enter afterwards. |
+| `deslizar(direccion)` | swipe | Scrolls `abajo` (down), `arriba` (up), `izquierda` (left) or `derecha` (right). |
+| `atras()` | back | Presses the Back button. |
+| `tecla(nombre)` | key | Presses `inicio` (home), `enter`, `borrar` (delete) or `recientes` (recent apps). |
+| `abrir_app(nombre)` | open app | Opens an app by name ("Gmail", "Settings", "WhatsApp") or by package, with no LLM involved. |
 
-## Uso
+**Behavior shared by the tools:**
+- Every action **returns the new screen**, so the agent needs one call per step.
+- Before tapping or typing, the tool re-reads the screen and finds the element by its label. If the element is gone, it does nothing and returns the current screen.
+- If the phone is locked, `ver_pantalla` says so.
+
+## Requirements
+
+- An Android phone with USB or wireless debugging enabled, and a working `adb`.
+- [google/artemis](https://github.com/google/artemis) cloned and installed with `uv sync`.
+  - android-lite reuses its device controller and its accessibility helper, which dumps the UI tree in about 20 ms.
+  - Install the helper on the phone with `uv run artemis helper install`.
+
+## Usage
 
 ```bash
 git clone https://github.com/Youdicen/android-lite.git
-export ARTEMIS=/ruta/a/artemis
+export ARTEMIS=/path/to/artemis
 
-# Servidor MCP por stdio
+# MCP server over stdio
 PYTHONPATH=$PWD/android-lite:$ARTEMIS $ARTEMIS/.venv/bin/python -m android_lite
 ```
 
@@ -78,13 +92,13 @@ hermes mcp add android --command $ARTEMIS/.venv/bin/python \
 
 ```json
 "android": {
-  "command": "/ruta/a/artemis/.venv/bin/python",
+  "command": "/path/to/artemis/.venv/bin/python",
   "args": ["-m", "android_lite"],
-  "env": { "PYTHONPATH": "/ruta/a/android-lite:/ruta/a/artemis" }
+  "env": { "PYTHONPATH": "/path/to/android-lite:/path/to/artemis" }
 }
 ```
 
-Si hay varios dispositivos conectados, se prefiere el USB. Para fijar uno concreto, usa `ANDROID_LITE_SERIAL=<serial>`.
+When several devices are connected, USB is preferred. To pin a specific one, set `ANDROID_LITE_SERIAL=<serial>`.
 
 ## Tests
 
@@ -92,14 +106,14 @@ Si hay varios dispositivos conectados, se prefiere el USB. Para fijar uno concre
 $ARTEMIS/.venv/bin/python -m pytest
 ```
 
-Los tests de `compact` y `apps` no necesitan ni teléfono ni ARTEMIS.
+The `compact` and `apps` tests need neither a phone nor ARTEMIS.
 
-## Límites
+## Limitations
 
-- Los iconos sin etiqueta aparecen como `icono arriba-der` o con su resource-id.
-- En juegos o en apps Flutter o Canvas el árbol de accesibilidad viene vacío; ahí hace falta un agente con visión, como el propio ARTEMIS.
-- Solo Android.
+- Icons without an accessibility label show up as `icono arriba-der` ("icon top-right") or by their resource-id.
+- Games and Flutter or Canvas apps expose an empty accessibility tree. For those, use an agent with vision, such as ARTEMIS itself.
+- Android only.
 
-## Licencia
+## License
 
-Apache-2.0, igual que ARTEMIS.
+Apache-2.0, the same as ARTEMIS.
